@@ -4,7 +4,7 @@
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-		<title>reveal.js</title>
+		<title>ライブラリ分解 - Kaminari</title>
 
 		<link rel="stylesheet" href="css/reveal.css">
 		<link rel="stylesheet" href="css/theme/simple.css">
@@ -24,6 +24,11 @@
 		<!-- Customize Style -->
 		<style>
 			.reveal ul li { margin: 1.0em 0; }
+			.reveal section img {
+				border: none;
+				box-shadow: none;
+				vertical-align: middle;
+			}
 		</style>
 
 	</head>
@@ -32,164 +37,180 @@
 			<div class="slides">
 				<section data-markdown data-separator="^\n---$" data-separator-vertical="^\n--$">
 					<script type="text/template">
-						### 関数型プログラミング入門
-						#### Introduction for Functional Programming
-						<div style="margin-top: 1.0em; font-size: 0.8em;">2017/12/13 Taiki Hiramatsu</div>
+						### ライブラリ分解 - Kaminari
+						#### Understanding Library Structure - Kaminari
+						<div style="margin-top: 1.2em; font-size: 0.8em;">2018/02/14 Taiki Hiramatsu</div>
 
 						---
-						### 関数型プログラミングとは？
-						* オブジェクト指向などと並ぶプログラミング手法の１つ
-						* おおざっぱに言うと、処理を副作用のない関数に分離するプログラミング手法
-						* 関数型プログラミングを行いやすいように作られた言語を関数型言語と呼ぶことが多い
+						### Kaminariとは
+						* ページネーション機能(長いコンテンツをページ分割する機能)を提供するGem
+						* Kaminariはリソース(多くの場合DBのレコード)にページ分割用のインタフェースを追加してくれる
+						* ルーティングやリソースの分割方法に開発者がほとんど気を使わずともページネーションを実装できる
 
 						--
-						### プログラミング手法としての関数型
-						* 手続き型：手続き(プロシージャ)や関数を利用
-						* オブジェクト指向型：オブジェクトを利用
-						* 関数型：(数学的な)関数を利用
+						### こんな見た目のやつです
+						![ページネーション例](ex_pagination.jpg)
 
 						--
-						### 処理を副作用のない関数に分離するプログラミング手法
-						* 副作用 ＝ 関数の実行による暗黙的な状態の変化
+						### Kaminariの使い方
+						Gemfileに記述を追加するだけでRailsの各モデルにページネーション機能が追加される
 						```Ruby
-						# 副作用のある関数 (Ruby)
-						a = 0
-						def count(x)
-							a = a + x
+						# Gemfile
+						gem 'kaminari'
+						```
+
+						--
+						### 例. Userをページネーションさせる
+						```Ruby
+						# Controller側 (app/controllers/users_controller.rb)
+						def UsersController < ApplicationController
+							def index
+								@users = User.page(params[:page])
+						    end
 						end
 						```
-						* 参照透過性 ＝ 暗黙的な入力による出力の変化がないこと ＝ 同じ入力なら同じ出力が必ず返ること
-						* 純粋関数 ＝ 参照透過性を持ち、副作用のない関数
-
-						--
-						### 関数型プログラミングと関数型言語
-						* 有名な関数型言語  
-						LISP, Erlang, Haskell, ML, Scala, Rust, Elixir
-						* 関数型プログラミングで使われる機能/特性  
-						Lambda, 高階関数, イミュータブル, モナド, カリー化 etc.
-						* 関数型の言語でしか、関数型プログラミングが行えないというわけではなく、
-						多くの言語でその考え方を適用することができる
+						```Ruby
+						# View側 (app/views/users/index.html.erb)
+						<% @users.each do |user| %>
+							# ユーザ表示のイテレーション
+						<% end %>
+						# ページネーションのUIを表示
+						<%= paginate @users %>
+						```
+						<span>表示されるUI：</span>
+						![ページネーションUI](paginate.jpg)
 
 						---
-						### 関数型プログラミングのメリット
-						* 副作用を減らし、コードの見通し・保守性を向上させる
-						* 状態管理がシンプルになるので並列処理との相性も良い
-						* コードが短くなることが多い
-						* テストがしやすい
+						### Gemの中身を覗いてみよう
+
+						```Ruby
+						# lib/kaminari.rb
+
+						# lib/kaminari/railtie.rb
+						module Kaminari
+							class Railtie < ::Rails::Railtie #:nodoc:
+								initializer 'kaminari' do
+									Kaminari::Hooks.init
+								end
+							end
+						end
+						```
 
 						--
-						### 関数型プログラミングの特徴
-						* 不要な変数宣言・代入は避ける
-						* メソッドチェーンを多用
-						* 高階関数を多く利用
+						### ActiveRecord, ActionViewを拡張
+
+						```Ruby
+						# lib/kaminari/hooks.rb
+						module Kaminari
+							class Hooks
+								def self.init
+									# ActiveRecordを拡張
+									ActiveSupport.on_load(:active_record) do
+										require 'kaminari/models/active_record_extension'
+										::ActiveRecord::Base.send :include, Kaminari::ActiveRecordExtension
+									end
+
+									# ... 中略 ...
+
+									# ActionViewを拡張
+									ActiveSupport.on_load(:action_view) do
+										::ActionView::Base.send :include, Kaminari::ActionViewExtension
+									end
+								end
+							end
+						end
+						```
+
+						--
+						### ActiveRecordの拡張
+						```Ruby
+						# lib/kaminari/model/active_record_extension
+						module Kaminari
+							module ActiveRecordExtension
+								extend ActiveSupport::Concern
+
+								module ClassMethods
+									# Future subclasses will pick up the model extension
+									def inherited(kls) #:nodoc:
+										super
+										kls.send(:include, Kaminari::ActiveRecordModelExtension) if kls.superclass == ::ActiveRecord::Base
+									end
+								end
+
+								included do
+									# Existing subclasses pick up the model extension as well
+									self.descendants.each do |kls|
+										kls.send(:include, Kaminari::ActiveRecordModelExtension) if kls.superclass == ::ActiveRecord::Base
+									end
+								end
+							end
+						end
+						```
+
+						--
+						### ページネーション用のメソッドを定義
+						```Ruby
+						module Kaminari
+							module ActiveRecordModelExtension
+								extend ActiveSupport::Concern
+
+								included do
+									self.send(:include, Kaminari::ConfigurationMethods)
+
+									# Fetch the values at the specified page number
+									#   Model.page(5)
+									eval <<-RUBY
+										def self.#{Kaminari.config.page_method_name}(num = nil)
+											limit(default_per_page).offset(default_per_page * ((num = num.to_i - 1) < 0 ? 0 : num)).extending do
+												include Kaminari::ActiveRecordRelationMethods
+												include Kaminari::PageScopeMethods
+											end
+										end
+									RUBY
+								end
+							end
+						end
+						```
 
 						---
-						### 関数型プログラミングの実例
-						* 単純なイテレーションの例 (Ruby)
-						```Ruby
-						# 手続き型の例
-						array = 1..100
-						total = 0
-						array.each do |number|
-							total = total + number
-						end
-						puts total
-						```
-						```Ruby
-						# 関数型の例
-						array = 1..100
-						puts array.reduce(:+)
-						```
+						### Kaminariのレイヤー別機能
+						* [Model] リソースにページ分割に対応したインターフェースを追加
+						* [View] ページネーションのUI(ViewHelper)を提供
+						* [Controller] ページ分割に対応したルーティングを追加
+
+						---
+						### ActiveRecord以外への対応
+						* MongoDBのORマッパーであるMongoid, MongoMapperにも対応
+						* つまり、RDB(ActiveRecord)と一部のNoSQL(実質MongoDBのみ)で利用可能
+						* それ以外のデータ構造に適用させたいときは...
 
 						--
-						* ActiveRecordの例 (Ruby on Rails)  
-						例. 料金が3000円以上の注文の合計金額を求める
+						### 解決策その１
+						paginate_arrayを利用する
 						```Ruby
-						# 手続き型の例
-						@orders = Order.all
-						total_price = 0
-						@orders.each do |order|
-							total_price = total_price + order.price if order.price >= 3000
-						end
-						puts total_price
+							# 例えばAPI経由で取得したデータに対して
+							api_response = User::API.all
+							# 配列で取得したデータをページネーションオブジェクトへ変換
+							@users = Kaminari.paginate_array(api_response)
 						```
-						```Ruby
-						# 関数型の例
-						@orders = Order.all
-						puts @orders.select { |order| order.price >= 3000 }.reduce(:+)
-						```
-						```Ruby
-						# このケースではDB側で集計する方がパフォーマンスが良い
-						puts Order.where(Order.arel_table[:price].gteq(3000)).sum(:price)
-						```
-
+						* メリット：配列で表せるものであれば(実質的に何でも)ページネート可能
+						* デメリット：パフォーマンス的にページネーションの意味をなしていない
+						
 						--
-						* ActiveRecordの例 応用系 (Ruby on Rails)  
-						例. 日毎の売上金額を集計して、日付を分かりやすい形で出力する
-						```Ruby
-						# 日毎の売上金額を集計して、Hash(datetime => integer)形式で取得
-						@orders = Order
-								.group("DATE_TRUNC('day', sold_at)")
-								.sum(:price)
-						# Keyをリネームした新しいHashを生成
-						@result = @orders.inject({}) do |accumulator, (datetime, price)|
-							accumulator[datetime.strftime("%Y-%m-%d")] = price
-							accumulator
-						end
-						# 結果を出力
-						puts @result
-						# => { "2017-12-13" => 100000, "2017-12-14" => 200000 }
-						```
-
-						--
-						### Rubyで使える関数型ライクなメソッドの例
-						- `map/collect`　　　　　　　　　　　　　　
-						- `inject/reduce`
-						- `select`
-						- `reject`
-						- `tap`
-
-						--
-						### Javascriptで使える関数型ライクなメソッドの例 (ES5.1)
-						- `map`　　　　　　　　　　　　　　　　　　
-						- `reduce`
-						- `filter`
-
-						--
-						* Javascriptの例 (ES6)  
-						例. 0から100までの整数値の総和を求める
-						```js
-						# 手続き型の例
-						let array = [...Array(101).keys()];
-						let total = 0;
-						for(let n = 0; n < array.length; n++){
-							total += array[n];
-						}
-						console.log(total);
-						```
-						```js
-						# 関数型の例
-						let array = [...Array(101).keys()];
-						console.log(array.reduce((a, x) => a + x, 0));
-						```
-
+						### 解決策その２
+						自身でPaginatableなオブジェクトを作る
+						メリット：パフォーマンス、スケーラビリティに考慮した設計が可能
+						デメリット：設計難易度が高い上に非公式的なサポート
+						
 						---
 						### まとめ
-						* 関数型プログラミングは、潜在的なバグを減らし保守性を向上させる
-						* 特定の言語に依存した考え方ではなく、あくまでプログラミング全般の設計思想的なもの
-						* 明日からすべて関数型言語で。ではなくて今使っている言語の関数型ライクな機能を使えると良いのでは
+						* RailsのGemはこのような拡張手段をとることが非常に多いため、構造を理解しておくと自身である程度カスタマイズ可能
+						* Railsを含めライブラリの内部コードを見ることは、設計など知識を深めることに繋がる
 
 						---
-						### 参考(になる)サイト
-						- [関数型言語 - Wikipedia](https://ja.wikipedia.org/wiki/%E9%96%A2%E6%95%B0%E5%9E%8B%E8%A8%80%E8%AA%9E)
-						- [関数型プログラミング入門 - POSTD](http://postd.cc/an-introduction-to-functional-programming/)
-						- [参照透過性と副作用についての提言 - Qiita](https://qiita.com/sasanquaneuf/items/3df1001a027e868e9e0e)
-
-						--
-						### おまけ
-						* このスライドはReveal.jsで作ったものをGithub Pagesでホスティングしています。
-						* Reveal.jsはHTML or Markdownでスライドを作れる便利なツールです。
-						* 機会があればぜひ使ってみてください。
+						### 参考サイト
+						- [Kaminari - Github](https://github.com/kaminari/kaminari)
+						- [Rails の初期化プロセス - Rails Guides](https://railsguides.jp/initialization.html)
 
 					</script>
 				</section>
