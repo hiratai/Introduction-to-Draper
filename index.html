@@ -4,7 +4,7 @@
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-		<title>ライブラリ分解 - Kaminari</title>
+		<title>Draper入門 - Decoratorパターン</title>
 
 		<link rel="stylesheet" href="css/reveal.css">
 		<link rel="stylesheet" href="css/theme/simple.css">
@@ -37,180 +37,101 @@
 			<div class="slides">
 				<section data-markdown data-separator="^\n---$" data-separator-vertical="^\n--$">
 					<script type="text/template">
-						### ライブラリ分解 - Kaminari
-						#### Understanding Library Structure - Kaminari
-						<div style="margin-top: 1.2em; font-size: 0.8em;">2018/02/14 Taiki Hiramatsu</div>
+						<div style="margin-top: 4.5em;"> </div>
+
+						### Draper入門 - Decoratorパターン
+						#### Introduction to Draper - Decorator Pattern
+						<div style="margin-top: 5.5em; font-size: 0.8em; text-align: right;">2018/04/10 Taiki Hiramatsu</div>
 
 						---
-						### Kaminariとは
-						* ページネーション機能(長いコンテンツをページ分割する機能)を提供するGem
-						* Kaminariはリソース(多くの場合DBのレコード)にページ分割用のインタフェースを追加してくれる
-						* ルーティングやリソースの分割方法に開発者がほとんど気を使わずともページネーションを実装できる
+						### Draperとは...の前に
+						
 
 						--
-						### こんな見た目のやつです
-						![ページネーション例](ex_pagination.jpg)
+						### MVCモデルについておさらい
+						
+						--
+						### MVCのイメージ図
+						![MVC Image](MVCImage.png)
 
 						--
-						### Kaminariの使い方
-						Gemfileに記述を追加するだけでRailsの各モデルにページネーション機能が追加される
-						```Ruby
-						# Gemfile
-						gem 'kaminari'
-						```
+						### なぜ３つのレイヤーに分かれているのでしょう...
 
 						--
-						### 例. Userをページネーションさせる
+						### それぞれのレイヤーの役割
+						* Model：
+							ビジネスロジック (多くの場合データベース関連のリソースの操作)
+						* View：
+							ユーザへ情報を表示
+						* Controller：
+							ユーザからの入力を元にModel, Viewを操作
+
+						---
+						### Railsのレイヤー構造 (1)
+						<div style="font-size: 0.9em;">Railsプロジェクトapp下のディレクトリ構造 (Rails 5)</div>
+						* assets：画像, Javascript, CSSなどのアセットを格納
+						* channels：ActionCable用
+						* jobs：ActiveJob用
+						* mailers：ActionMailer用
+						
+						--
+						### Railsのレイヤー構造 (2)
+						<div style="font-size: 0.9em;">Railsプロジェクトapp下のディレクトリ構造 (Rails 5)</div>
+						* <span style="color: #e74c3c">models</span>：ビジネスロジック (データベースなどのリソース操作)
+						* <span style="color: #e74c3c">views</span>：HTML, JSONなどインターフェースを表示
+						* <span style="color: #e74c3c">controllers</span>：ユーザからの入力を処理
+						* <span style="font-weight: bold">helpers</span>：Viewの共通処理を関数としてまとめる(ことが多い)
+						
+						--
+						### こんな風になったことありませんか？
 						```Ruby
-						# Controller側 (app/controllers/users_controller.rb)
-						def UsersController < ApplicationController
-							def index
-								@users = User.page(params[:page])
-						    end
-						end
-						```
-						```Ruby
-						# View側 (app/views/users/index.html.erb)
-						<% @users.each do |user| %>
-							# ユーザ表示のイテレーション
+						# Viewにifなどの制御構文が大量に出現
+						<% if @user.gender == "male" %>
+							<div>C</div>
+						<% elsif @user.gender == "female" %>
+							<% if @user.type == "A" %>
+								<div>A</div>
+							<% elsif @user.type == "B" %>
+								<div>B</div>
+							<% end %>
 						<% end %>
-						# ページネーションのUIを表示
-						<%= paginate @users %>
-						```
-						<span>表示されるUI：</span>
-						![ページネーションUI](paginate.jpg)
-
-						---
-						### Gemの中身を覗いてみよう
-
-						```Ruby
-						# lib/kaminari.rb
-
-						# lib/kaminari/railtie.rb
-						module Kaminari
-							class Railtie < ::Rails::Railtie #:nodoc:
-								initializer 'kaminari' do
-									Kaminari::Hooks.init
-								end
-							end
-						end
-						```
-
-						--
-						### ActiveRecord, ActionViewを拡張
-
-						```Ruby
-						# lib/kaminari/hooks.rb
-						module Kaminari
-							class Hooks
-								def self.init
-									# ActiveRecordを拡張
-									ActiveSupport.on_load(:active_record) do
-										require 'kaminari/models/active_record_extension'
-										::ActiveRecord::Base.send :include, Kaminari::ActiveRecordExtension
-									end
-
-									# ... 中略 ...
-
-									# ActionViewを拡張
-									ActiveSupport.on_load(:action_view) do
-										::ActionView::Base.send :include, Kaminari::ActionViewExtension
-									end
-								end
-							end
-						end
-						```
-
-						--
-						### ActiveRecordの拡張
-						```Ruby
-						# lib/kaminari/model/active_record_extension
-						module Kaminari
-							module ActiveRecordExtension
-								extend ActiveSupport::Concern
-
-								module ClassMethods
-									# Future subclasses will pick up the model extension
-									def inherited(kls) #:nodoc:
-										super
-										kls.send(:include, Kaminari::ActiveRecordModelExtension) if kls.superclass == ::ActiveRecord::Base
-									end
-								end
-
-								included do
-									# Existing subclasses pick up the model extension as well
-									self.descendants.each do |kls|
-										kls.send(:include, Kaminari::ActiveRecordModelExtension) if kls.superclass == ::ActiveRecord::Base
-									end
-								end
-							end
-						end
-						```
-
-						--
-						### ページネーション用のメソッドを定義
-						```Ruby
-						module Kaminari
-							module ActiveRecordModelExtension
-								extend ActiveSupport::Concern
-
-								included do
-									self.send(:include, Kaminari::ConfigurationMethods)
-
-									# Fetch the values at the specified page number
-									#   Model.page(5)
-									eval <<-RUBY
-										def self.#{Kaminari.config.page_method_name}(num = nil)
-											limit(default_per_page).offset(default_per_page * ((num = num.to_i - 1) < 0 ? 0 : num)).extending do
-												include Kaminari::ActiveRecordRelationMethods
-												include Kaminari::PageScopeMethods
-											end
-										end
-									RUBY
-								end
-							end
-						end
 						```
 
 						---
-						### Kaminariのレイヤー別機能
-						* [Model] リソースにページ分割に対応したインターフェースを追加
-						* [View] ページネーションのUI(ViewHelper)を提供
-						* [Controller] ページ分割に対応したルーティングを追加
+						### Draperとは
+						* 公式リポジトリのディスクリプション：  
+						『Decorators/View-Models for Rails Applications』
+						* 類似のGem：「ActiveDecorator」
 
 						---
-						### ActiveRecord以外への対応
-						* MongoDBのORマッパーであるMongoid, MongoMapperにも対応
-						* つまり、RDB(ActiveRecord)と一部のNoSQL(実質MongoDBのみ)で利用可能
-						* それ以外のデータ構造に適用させたいときは...
+						### Decorator / View-Model
+						* Decoratorパターン  
+							既存のオブジェクトをラップすることで、中身を直接触らなくても機能を拡張することが可能。  
+							=> 継承との違いは？
+						* View-Model
+							ViewをModel化(抽象化)したもの
 
 						--
-						### 解決策その１
-						paginate_arrayを利用する
-						```Ruby
-							# 例えばAPI経由で取得したデータに対して
-							api_response = User::API.all
-							# 配列で取得したデータをページネーションオブジェクトへ変換
-							@users = Kaminari.paginate_array(api_response)
-						```
-						* メリット：配列で表せるものであれば(実質的に何でも)ページネート可能
-						* デメリット：パフォーマンス的にページネーションの意味をなしていない
-						
+						### Draperの機能
+						* RailsプロジェクトにGemとして追加することで、RailsのレイヤーにDecorator層を追加  
+							(app下に`decorators`ディレクトリが追加され、`rails g decorator User`のようなジェネレータが使えるようになる)
+
 						--
-						### 解決策その２
-						自身でPaginatableなオブジェクトを作る
-						メリット：パフォーマンス、スケーラビリティに考慮した設計が可能
-						デメリット：設計難易度が高い上に非公式的なサポート
-						
+						### Draperのメリット / Helperとの違い
+						* RailsのViewHelper内メソッドはあるオブジェクトに紐づいたものではなく、多くなればなるほど汚染や衝突のリスクが高い
+						* 既存のアクセサをオーバライドするイメージで使えるため、ViewとModelで同じ名前のアクセサを利用できる
+
 						---
 						### まとめ
-						* RailsのGemはこのような拡張手段をとることが非常に多いため、構造を理解しておくと自身である程度カスタマイズ可能
-						* Railsを含めライブラリの内部コードを見ることは、設計など知識を深めることに繋がる
+						* Decoratorを適切に利用することで、Viewのロジックを減らし可読性を高められる。
+						* しかし、層を導入することは学習コスト面、メンテナンスコストなどの面を考慮する必要がある。 
 
 						---
 						### 参考サイト
-						- [Kaminari - Github](https://github.com/kaminari/kaminari)
-						- [Rails の初期化プロセス - Rails Guides](https://railsguides.jp/initialization.html)
+						- [Draper - Github](https://github.com/drapergem/draper)
+						- [10分で振り返るソフトウェアアーキテクチャの歴史2017](https://speakerdeck.com/takasek/10fen-tezhen-rifan-rusohutoueaakitekutiyafalseli-shi-2017)
+						- [Webアプリケーション開発者から見た、MVCとMVP、そしてMVVMの違い - Qiita](https://qiita.com/shinkuFencer/items/f2651073fb71416b6cd7)
+						- [Decoratorの役割とDraperについて - Qiita](https://qiita.com/jonson29/items/00077b54bb91ed74fdb8)
 
 					</script>
 				</section>
